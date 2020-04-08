@@ -76,7 +76,7 @@ If a node does not have sufficient peers then it may proportionally send more me
 
 When a node has successfully validated `PotentialAmnesiaEvidence` it timestamps it and refuses to receive the same form of `PotentialAmnesiaEvidence`. If a node receives `AmnesiaEvidence` it checks it against any current `AmnesiaEvidence` it might have and if so merges the two by adding the proofs, if it doesn't have it yet it run's `Verify()` and stores it.
 
-There can only be one `AmnesiaEvidence` and one `PotentialAmneisaEvidence` stored for each attack.
+There can only be one `AmnesiaEvidence` and one `PotentialAmneisaEvidence` stored for each attack (i.e. for each height).
 
 When, `time.Now() > PotentialAmnesiaEvidence.timestamp + AmnesiaTrialPeriod`, honest validators of the current validator set can begin proposing the block that contains the `AmnesiaEvidence`.
 
