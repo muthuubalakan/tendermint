@@ -87,6 +87,10 @@ Other validators will vote <nil> if:
 - The Amensia Evidence is of the same height but is different to the Amnesia Evidence that they have. i.e. is missing proofs.
 - Is of an AmnesiaEvidence that has already been committed to the chain.
 
+*NOTE: Evidence is capped at 484 bytes. `AmensiaEvidence`, unlike other evidence is batch processed and so we need to be careful as to not exceed this value or
+have a method of breaking the evidence first before sending it. An alternative is to find a way to have dynamic evidence size such that evidence is attached before the
+transactions are attached from the mempool.*
+
 *NOTE: Although this process only indicates committing `AmensiaEvidence` to the chain, it is also possible that `PotentialAmnesiaEvidence` is committed*
 
 ## Status
