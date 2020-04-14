@@ -39,9 +39,8 @@ type PotentialAmnesiaEvidence struct {
 }
 ```
 
-*REMARK: We could also use `VoteSet`*
-
-*NOTE: this is almost identical to Duplicate Vote Evidence and although one is for different rounds and the other is for the same round, there is a case that these two could be combined. In addition, I believe batch processing to be more efficient than individual processing and would think all evidence that constitutes multiple attackers should be grouped together.*
+*NOTE: Unlike prior evidence types, `PotentialAmnesiaEvidence` and `AmnesiaEvidence` are processed as a batch instead
+ of individually. This will require changes to much of the API*
 
 The evidence should contain the precommit votes for the intersection of validators that voted for both rounds. The votes should be all valid and the height and time that the infringement was made should be within:
 
