@@ -54,7 +54,7 @@ With reference to the honest nodes, C1 and C2, in the schematic, C2 will not PRE
 
 Instead we use the Proof of Lock Change (PoLC) referred to in the [consensus spec](https://github.com/tendermint/spec
 /blob/master/spec/consensus/consensus.md#terms). When an honest node votes again for a different block in a later round
-, in very rare cases, it will generate the PoLC and store it in the evidence reactor for a time equal to the `Trusting Period`
+(which will only occur in very rare cases), it will generate the PoLC and store it in the evidence reactor for a time equal to the `Trusting Period`
 
 ```
 type ProofOfLockChange struct {
@@ -62,7 +62,7 @@ type ProofOfLockChange struct {
 }
 ```
 
-This can be either evidence of +2/3 PREVOTES or PRECOMMITS (either warrants the honest node the right to vote) and is valid, among other checks, so long as the PRECOMMIT vote of the node in V2 came after all the votes in the `ProofOfLockChange` i.e. it received +2/3  votes and then voted itself (F is unable to prove this).
+This can be either evidence of +2/3 PREVOTES or PRECOMMITS (either warrants the honest node the right to vote) and is valid, among other checks, so long as the PRECOMMIT vote of the node in V2 came after all the votes in the `ProofOfLockChange` i.e. it received +2/3 votes for a block and then voted for that block thereafter (F is unable to prove this).
 
 In the event that an honest node receives `PotentialAmnesiaEvidence` it will first `Verify()` it and then will check if it is among the suspected nodes in the evidence. If so, it will retrieve the `ProofOfLockChange` and combine it with `PotentialAmensiaEvidence` to form `AmensiaEvidence`:
 
@@ -74,10 +74,6 @@ type AmnesiaEvidence struct {
 ```
 
 If the node is not required to submit any proof than it will simply broadcast the `PotentialAmnesiaEvidence` .
-
-In either case, in a network where each node has n peers, if n is high enough to easily overcome network problems such as dropout than it should be sufficient that peers only broadcast once per `Amnesia trial period` + `Gossip safety margin` as long as `AmnesiaEvidence` has not yet been committed on the chain.
-
-If a node does not have sufficient peers then it may proportionally send more messages at an appropriate interval.
 
 When a node has successfully validated `PotentialAmnesiaEvidence` it timestamps it and refuses to receive the same form of `PotentialAmnesiaEvidence`. If a node receives `AmnesiaEvidence` it checks it against any current `AmnesiaEvidence` it might have and if so merges the two by adding the proofs, if it doesn't have it yet it run's `Verify()` and stores it.
 
@@ -114,6 +110,8 @@ Non-responsive but honest nodes that are part of the suspect group that don't pr
 A delay between the detection of a fork and the punishment of one
 
 ### Neutral
+
+Evidence package will need to be able to handle batch evidence as well as individual evidence (i.e. extra work)
 
 ## References
 
