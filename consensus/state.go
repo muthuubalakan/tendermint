@@ -3,6 +3,10 @@ package consensus
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"os/exec"
 	"reflect"
 	"runtime/debug"
 	"sync"
@@ -286,13 +290,9 @@ func (cs *State) OnStart() error {
 	// we may set the WAL in testing before calling Start,
 	// so only OpenWAL if its still the nilWAL
 	if _, ok := cs.wal.(nilWAL); ok {
-		walFile := cs.config.WalFile()
-		wal, err := cs.OpenWAL(walFile)
-		if err != nil {
-			cs.Logger.Error("Error loading State wal", "err", err.Error())
+		if err := cs.loadWalFile(); err != nil {
 			return err
 		}
-		cs.wal = wal
 	}
 
 	// we need the timeoutRoutine for replay so
@@ -307,27 +307,40 @@ func (cs *State) OnStart() error {
 	// we may have lost some votes if the process crashed
 	// reload from consensus log to catchup
 	if cs.doWALCatchup {
-		if err := cs.catchupReplay(cs.Height); err != nil {
-			// don't try to recover from data corruption error
-			if IsDataCorruptionError(err) {
-				cs.Logger.Error("Encountered corrupt WAL file", "err", err.Error())
-				cs.Logger.Error("Please repair the WAL file before restarting")
-				fmt.Println(`You can attempt to repair the WAL as follows:
+		repairAttempted := false
+		for {
+			err := cs.catchupReplay(cs.Height)
+			if err == nil {
+				break
+			}
+			// try to recover from data corruption error
+			if !IsDataCorruptionError(err) {
+				cs.Logger.Error("Error on catchup replay. Proceeding to start State anyway", "err", err.Error())
+				// NOTE: if we ever do return an error here,
+				// make sure to stop the timeoutTicker
+				break
+			}
 
-----
-WALFILE=~/.tendermint/data/cs.wal/wal
-cp $WALFILE ${WALFILE}.bak # backup the file
-go run scripts/wal2json/main.go $WALFILE > wal.json # this will panic, but can be ignored
-rm $WALFILE # remove the corrupt file
-go run scripts/json2wal/main.go wal.json $WALFILE # rebuild the file without corruption
-----`)
-
+			// WAL file is corrupted, check whether repair has already been attempted
+			errorMessageFmt := "Encountered corrupt WAL file: %s"
+			if repairAttempted {
+				cs.Logger.Error(fmt.Sprintf(errorMessageFmt, "repair already attempted"), "err", err.Error())
 				return err
 			}
 
-			cs.Logger.Error("Error on catchup replay. Proceeding to start State anyway", "err", err.Error())
-			// NOTE: if we ever do return an error here,
-			// make sure to stop the timeoutTicker
+			// attempt repair the WAL file
+			cs.Logger.Error(fmt.Sprintf(errorMessageFmt, "attempting repair"), "err", err.Error())
+			if err := attemptWalFileRepair(cs.config.WalFile()); err != nil {
+				cs.Logger.Error("Repair failed", "err", err.Error())
+				return err
+			}
+			repairAttempted = true
+			cs.Logger.Info("Repair succeeded, reloading WAL file")
+			cs.wal = nilWAL{}
+			if err := cs.loadWalFile(); err != nil {
+				return err
+			}
+
 		}
 	}
 
@@ -350,6 +363,17 @@ func (cs *State) startRoutines(maxSteps int) {
 		return
 	}
 	go cs.receiveRoutine(maxSteps)
+}
+
+// loadWalFile loads WAL data from file. It overwrites cs.wal.
+func (cs *State) loadWalFile() error {
+	wal, err := cs.OpenWAL(cs.config.WalFile())
+	if err != nil {
+		cs.Logger.Error("Error loading State wal", "err", err.Error())
+		return err
+	}
+	cs.wal = wal
+	return nil
 }
 
 // OnStop implements service.Service.
@@ -2007,4 +2031,70 @@ func CompareHRS(h1 int64, r1 int, s1 cstypes.RoundStepType, h2 int64, r2 int, s2
 		return 1
 	}
 	return 0
+}
+
+// attemptWalFileRepair runs WAL file repair script.
+func attemptWalFileRepair(walFile string) error {
+	wal2json, json2wal, err := repairCmds()
+	if err != nil {
+		return err
+	}
+
+	return repairWalFile(walFile, wal2json, json2wal)
+}
+
+func repairWalFile(walFile, wal2json, json2wal string) error {
+	// backup original wal file
+	if err := copyFile(walFile, fmt.Sprintf("%s.CORRUPTED", walFile)); err != nil {
+		return err
+	}
+	out, _ := exec.Command(wal2json, walFile).Output() // ignore error, wal2json command might panic
+
+	// write the output to an intermediate JSON file
+	jsonFile := fmt.Sprintf("%s.json", walFile)
+	if err := ioutil.WriteFile(jsonFile, out, os.ModePerm); err != nil {
+		return err
+	}
+	defer os.Remove(jsonFile) // cleanup
+
+	// remove the corrupted WAL file and run json2wal
+	if err := os.Remove(walFile); err != nil {
+		return err
+	}
+	return exec.Command(json2wal, jsonFile, walFile).Run()
+}
+
+func repairCmds() (wal2json string, json2wal string, err error) {
+	wal2json, err = exec.LookPath("wal2json")
+	if err != nil {
+		return wal2json, json2wal, fmt.Errorf("couldn't find wal2json: %v", err)
+	}
+	json2wal, err = exec.LookPath("json2wal")
+	if err != nil {
+		return wal2json, json2wal, fmt.Errorf("couldn't find json2wal: %v", err)
+	}
+	return
+}
+
+func copyFile(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	srcfile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcfile.Close()
+
+	// create new file, truncate if exists and apply same permissions as the original one
+	dstfile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	defer dstfile.Close()
+
+	_, err = io.Copy(srcfile, dstfile)
+	return err
 }
