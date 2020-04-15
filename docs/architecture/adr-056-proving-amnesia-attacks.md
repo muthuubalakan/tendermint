@@ -1,4 +1,4 @@
-# ADR 056: Proving flip flopping attacks
+# ADR 056: Proving amnesia attacks
 
 ## Changelog
 
@@ -7,9 +7,11 @@
 
 ## Context
 
-Whilst most created evidence of malicious behaviour is self evident such that any individual can verify them independently there are types of evidence, known as global evidence, that require further collaboration from the network in order to accumulate enough information to create evidence that is individually verifiable and can therefore be processed through consensus. [Fork Accountability](https://github.com/tendermint/spec/blob/master/spec/consensus/light-client/accountability.md) as a whole constitutes of detection, proving and punishing. This ADR addresses how to prove infringement from global evidence that is sent to a full node.
+Whilst most created evidence of malicious behaviour is self evident such that any individual can verify them independently there are types of evidence, known collectively as global evidence, that require further collaboration from the network in order to accumulate enough information to create evidence that is individually verifiable and can therefore be processed through consensus. [Fork Accountability](https://github.com/tendermint/spec/blob/master/spec/consensus/light-client/accountability.md) has been coined to describe the entire process of detection, proving and punishing of malicious behaviour. This ADR addresses specifically how to prove an amnesia attack but also generally outlines how global evidence can be converted to individual evidence.
 
-The currently only known form of global evidence stems from [flip flopping](https://github.com/tendermint/spec/blob/master/spec/consensus/light-client/accountability.md#flip-flopping) attacks. The schematic below explains one scenario where an amnesia attack, a form of flip flopping, can occur such that C1 and C2 commit different blocks.
+### Amnesia Attack
+
+The currently only known form of global evidence stems from [flip flopping](https://github.com/tendermint/spec/blob/master/spec/consensus/light-client/accountability.md#flip-flopping) attacks. The schematic below explains one scenario where an amnesia attack, a form of flip flopping, can occur such that two sets of honest nodes, C1 and C2, commit different blocks.
 
 ![](../imgs/tm-amnesia-attack.png)
 
@@ -30,7 +32,7 @@ Currently, the evidence reactor is used to simply broadcast and store evidence. 
 
 The process begins with a light client receiving conflicting headers (in the future this could also be a full node during fast sync), which it sends to a full node to analyse. As part of [evidence handling](https://github.com/tendermint/tendermint/blob/master/docs/architecture/adr-047-handling-evidence-from-light-client.md), this could be deduced into potential amnesia evidence
 
-```
+```golang
 type PotentialAmnesiaEvidence struct {
 	V1 []*types.Vote
 	V2 []*types.Vote
@@ -52,11 +54,10 @@ where `Amnesia trial period` is a configurable duration defaulted at 1 day and `
 
 With reference to the honest nodes, C1 and C2, in the schematic, C2 will not PRECOMMIT an earlier round, but it is likely, if a node in C1 were to receive +2/3 PREVOTE's or PRECOMMIT's for a higher round, that it would remove the lock and PREVOTE and PRECOMMIT for the later round. Therefore, unfortunately it is not a case of simply punishing all nodes that have double voted in the `PotentialAmnesiaEvidence`.
 
-Instead we use the Proof of Lock Change (PoLC) referred to in the [consensus spec](https://github.com/tendermint/spec
-/blob/master/spec/consensus/consensus.md#terms). When an honest node votes again for a different block in a later round
+Instead we use the Proof of Lock Change (PoLC) referred to in the [consensus spec](https://github.com/tendermint/spec/blob/master/spec/consensus/consensus.md#terms). When an honest node votes again for a different block in a later round
 (which will only occur in very rare cases), it will generate the PoLC and store it in the evidence reactor for a time equal to the `Trusting Period`
 
-```
+```golang
 type ProofOfLockChange struct {
 	Votes []*types.Vote
 }
@@ -66,7 +67,7 @@ This can be either evidence of +2/3 PREVOTES or PRECOMMITS (either warrants the 
 
 In the event that an honest node receives `PotentialAmnesiaEvidence` it will first `Verify()` it and then will check if it is among the suspected nodes in the evidence. If so, it will retrieve the `ProofOfLockChange` and combine it with `PotentialAmensiaEvidence` to form `AmensiaEvidence`:
 
-```
+```golang
 type AmnesiaEvidence struct {
 	Evidence *types.PotentialAmnesiaEvidence
 	Proofs	 []*types.ProofOfLockChange
