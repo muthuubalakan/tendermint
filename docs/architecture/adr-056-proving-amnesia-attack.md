@@ -40,11 +40,15 @@ type PotentialAmnesiaEvidence struct {
 ```
 
 *NOTE: Unlike prior evidence types, `PotentialAmnesiaEvidence` and `AmnesiaEvidence` are processed as a batch instead
- of individually. This will require changes to much of the API*
+ of individually. This will require changes to much of the API.*
+
+ *NOTE: `PotentialAmnesiaEvidence` could be constructed for when 1/3 or less vote in two different rounds but as it is not currently detected nor can it cause a fork, it will be ignored.*
 
 The evidence should contain the precommit votes for the intersection of validators that voted for both rounds. The votes should be all valid and the height and time that the infringement was made should be within:
 
 `Trusting period - Amnesia trial period - Gossip safety margin`
+
+where `Amnesia trial period` is a configurable duration defaulted at 1 day and `Gossip safety margin` is the average time for all validators in a network to receive a message (an estimation based on the size of the network).
 
 With reference to the honest nodes, C1 and C2, in the schematic, C2 will not PRECOMMIT an earlier round, but it is likely, if a node in C1 were to receive +2/3 PREVOTE's or PRECOMMIT's for a higher round, that it would remove the lock and PREVOTE and PRECOMMIT for the later round. Therefore, unfortunately it is not a case of simply punishing all nodes that have double voted in the `PotentialAmnesiaEvidence`.
 
