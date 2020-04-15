@@ -2043,6 +2043,7 @@ func attemptWalFileRepair(walFile string) error {
 	return repairWalFile(walFile, wal2json, json2wal)
 }
 
+// repairWalFile makes a backup copy of a WAL file, then runs the repair script on it.
 func repairWalFile(walFile, wal2json, json2wal string) error {
 	// backup original wal file
 	if err := copyFile(walFile, fmt.Sprintf("%s.CORRUPTED", walFile)); err != nil {
@@ -2064,6 +2065,8 @@ func repairWalFile(walFile, wal2json, json2wal string) error {
 	return exec.Command(json2wal, jsonFile, walFile).Run()
 }
 
+// repairCmds returns the absolute path of the json2wal, wal2json commands; returns an error
+// if either commands cannot be found in the PATH.
 func repairCmds() (wal2json string, json2wal string, err error) {
 	wal2json, err = exec.LookPath("wal2json")
 	if err != nil {
@@ -2076,6 +2079,7 @@ func repairCmds() (wal2json string, json2wal string, err error) {
 	return
 }
 
+// copyFile copies a file. It truncates the destination file if it exists.
 func copyFile(src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
